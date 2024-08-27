@@ -1,6 +1,6 @@
 sample,cram,crai
-sample1,watch,watch
-sample2,watch,watch
-sample3,watch,watch
-sample4,watch,watch
+sample1,watch:sample1.cram,watch:sample1.cram.crai
+sample2,watch:sample2.cram,watch:sample2.cram.crai
+sample3,watch:sample3.cram,watch:sample3.cram.crai
+sample4,watch:sample4.cram,watch:sample4.cram.crai
 sample5,data/sample5.cram,data/sample5.cram.crai

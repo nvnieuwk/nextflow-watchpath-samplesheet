@@ -4,8 +4,8 @@ This POC repository is used to try out `.watchPath` to easily link pipelines. Th
 
 The samplesheet consist of three columns:
 - `sample`: The name of the sample of that row
-- `cram`: The path to the CRAM file, The pipeline will watch for a file called `<sample>.cram` when this value is set to `watch`
-- `crai`: The path to the CRAM index file, The pipeline will watch for a file called `<sample>.cram.crai` when this value is set to `watch`
+- `cram`: The path to the CRAM file, The pipeline will watch for a file when this value has been set to `watch:<file_name>`
+- `crai`: The path to the CRAM index file, The pipeline will watch for a file when this value has been set to `watch:<file_name>`
 
 You'll need to know what files to watch for before this because all unexpected files will be skipped over. 
 The watching will automatically stop when all files have been found.

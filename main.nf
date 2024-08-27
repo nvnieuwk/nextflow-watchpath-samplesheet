@@ -5,35 +5,43 @@ workflow  {
     watchdir = params.watchdir
 
     // A list containing all expected files to be watched for
-    def expected_files = []
+    def watch_lines = [:]
+
+    def watch_id = UUID.randomUUID().toString()
+    def done_file = file("${params.watchdir}/DONE-${watch_id}")
+    def expected_files = [done_file.name]
     ch_samplesheet = Channel.empty()
 
     // Determine which files to watch for
     def samplesheet = samplesheetToList("samplesheet.csv", "schema_input.json")
-        .collect { meta, cram, crai ->
-            if (cram == "watch") {
-                expected_files.add("${meta.sample}.cram" as String)
-                expected_files.add("${meta.sample}.cram.crai" as String)
+        // Do some calculations and manipulations here
+        .collect { row ->
+            def is_watch = false
+            row = row.collect { input ->
+                input_name = input instanceof Path ? input.name : input as String
+                if (input_name.startsWith("watch:")) {
+                    is_watch = true
+                    expected_files.add(input_name.replace("watch:", ""))
+                    return input_name
+                }
+                return input
             }
-            else {
-                cram = file(cram, checkIfExists:true)
+            if (is_watch) {
+                watch_lines[row[0].id] = row
             }
-            if (crai != "watch") {
-                crai = file(crai, checkIfExists:true)
-            }
-            return [ meta, cram, crai ]
+            def new_meta = row[0] + [is_watch:is_watch]
+            return row
         }
 
     def ready = false
-
     Channel.fromList(samplesheet)
-        .map { meta, cram, crai ->
+        .map { row ->
             if (!ready) {
                 log.info("Pipeline ready! You can start the simulation script: `bash simulate_outdir.sh`")
                 ready = true
             }
             // do some channel manipulation here
-            [ meta, cram, crai ]
+            return row
         }
         .tap { ch_samplesheet_all }
 
@@ -45,69 +53,42 @@ workflow  {
             watchdir_path.mkdir()
         }
 
-        def watch_id = UUID.randomUUID().toString()
-        def done_file = file("${params.watchdir}/DONE-${watch_id}")
-
-        // Clone the list to filter on later
-        def watch_files = expected_files.clone()
-
         // Watch the preprocessing outdir for cram and crai files
-        Channel.watchPath("${watchdir}**{cram,crai,${done_file.name}}", "create,modify")
+        Channel.watchPath("${watchdir}**{${expected_files.join(',')}}", "create,modify")
             .until { file ->
                 // Stop when all files have been found
                 def file_name = file.name
                 if (expected_files.contains(file_name)) {
                     expected_files.removeElement(file_name)
-                    return false
-                } else if (file_name.startsWith("DONE")) {
+                } 
+                if (file_name == done_file.name) {
                     done_file.delete()
-                    return true
                 }
-                return false
-            }
-            .filter { file ->
-                // Filter out additional files that were not expected
-                return watch_files.contains(file.name)
+                return file_name == done_file.name
             }
             .map { file ->
-                if (expected_files.size() == 0) {
+                def id = find_id(file.name, watch_lines)
+                if (id == "") {
+                    error("Could not find id for file '${file.name}' in the samplesheet.")
+                }
+                watch_lines[id] = watch_lines[id].collect { line_entry ->
+                    line_entry == "watch:${file.name}" as String ? file : line_entry
+                }
+                return watch_lines[id]
+            }
+            .filter { entry ->
+                def found_all_files = false
+                if (!entry.any { elem -> elem.toString().startsWith("watch:") }) {
+                    watch_lines.remove(entry[0].id)
+                    found_all_files = true
+                }
+                if (watch_lines.size() == 0) {
                     done_file.text = ""
                 }
-                [file.baseName.replace(".cram", ""), file]
+                return found_all_files
             }
-            .groupTuple(size:2) // Group cram and crai files
-            .map { id, files ->
-                def cram
-                def crai
-                files.each { it ->
-                    if (it.name.endsWith(".cram")) { cram = it }
-                    else { crai = it }
-                }
-                [ id, cram, crai ]
-            }
-            .set { ch_watch }
-
-        ch_samplesheet_all
-            .filter { meta, cram, crai ->
-                // Only get watch lines from the samplesheet
-                return cram == "watch" || crai == "watch"
-            }
-            .map { meta, cram, crai ->
-                // Return everything except for the cram and crai here
-                return [ meta.id, meta ]
-            }
-            .join(ch_watch, failOnMismatch:true, failOnDuplicate:true) // Merge with the watched files
-            .map { id, meta, cram, crai ->
-                [ meta, cram, crai ]
-            }
-            .set { ch_watch_meta }
-
-        ch_samplesheet = ch_samplesheet_all
-            .filter { meta, cram, crai ->
-                // Only get the non-watch lines from the samplesheet
-                return cram != "watch" && crai != "watch"
-            }
-            .mix(ch_watch_meta) // Mix the watch channel into the samplesheet channel
+            .mix(ch_samplesheet_all.filter { entry -> !entry.any { elem -> elem.toString().startsWith("watch:") }})
+            .set { ch_samplesheet }
 
     } else {
         ch_samplesheet = ch_samplesheet_all
@@ -115,5 +96,16 @@ workflow  {
 
     ch_samplesheet.view()
 
+}
 
+def find_id(file_name, file_map) {
+    def lastDotIndex = file_name.lastIndexOf(".")
+    if (lastDotIndex == -1) {
+        return ""
+    }
+    def id = file_name.substring(0, lastDotIndex)
+    if (file_map.containsKey(id)) {
+        return id
+    }
+    return find_id(id, file_map)
 }

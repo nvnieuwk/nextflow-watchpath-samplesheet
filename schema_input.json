@@ -12,24 +12,30 @@
                 "meta": ["id", "sample"]
             },
             "cram": {
-                "type": "string",
                 "oneOf": [
-                    { "const": "watch" },
                     {
+                        "type": "string",
                         "pattern": "^\\S+\\.cram$",
                         "format": "file-path",
                         "exists": true
+                    },
+                    {
+                        "type": "string",
+                        "pattern": "^watch:.*$"
                     }
                 ]
             },
             "crai": {
-                "type": "string",
                 "oneOf": [
-                    { "const": "watch" },
                     {
+                        "type": "string",
                         "pattern": "^\\S+\\.crai$",
                         "format": "file-path",
                         "exists": true
+                    },
+                    {
+                        "type": "string",
+                        "pattern": "^watch:.*$"
                     }
                 ]
             }
